@@ -1,0 +1,23 @@
+# ---- Python / Frappe ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+node_modules/
+*.log
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- Secrets ----
+.env
+*.pem
+*.key
+
+# The mobile app keeps its own .gitignore (mobile/.gitignore)

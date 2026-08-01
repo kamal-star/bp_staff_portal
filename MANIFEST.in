@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include bp_staff_portal *.css
+recursive-include bp_staff_portal *.csv
+recursive-include bp_staff_portal *.html
+recursive-include bp_staff_portal *.ico
+recursive-include bp_staff_portal *.js
+recursive-include bp_staff_portal *.json
+recursive-include bp_staff_portal *.md
+recursive-include bp_staff_portal *.png
+recursive-include bp_staff_portal *.py
+recursive-include bp_staff_portal *.svg
+recursive-include bp_staff_portal *.txt
+recursive-exclude bp_staff_portal *.pyc

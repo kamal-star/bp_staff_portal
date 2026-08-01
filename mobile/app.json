@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Great North Staff",
+    "slug": "bp-staff-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3D2E"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.bpgreatnorth.staff",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B3D2E"
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bpgreatnorth.staff"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "defaultServerUrl": "https://bpgreatnorth.com"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
