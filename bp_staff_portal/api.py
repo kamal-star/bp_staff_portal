@@ -465,7 +465,9 @@ def end_shift(readings, deposits=None, credit_sales=0):
     doc.credit_sales = flt(credit_sales)
     doc.total_sales = total_sales
     doc.total_deposits = total_deposits
-    doc.variance = total_deposits + flt(credit_sales) - total_sales
+    # variance = sales that aren't on credit, less what's been deposited (the
+    # ERP's convention: unaccounted cash trends to 0 as deposits come in).
+    doc.variance = total_sales - flt(credit_sales) - total_deposits
     doc.end = now_datetime()
     doc.status = SHIFT_CLOSED
     doc.completed = 1
@@ -581,23 +583,31 @@ def _day_shift(ctx, date):
 
 @frappe.whitelist()
 def get_cashup(date=None):
-    """Day's sales summary for the cashup screen."""
+    """Sales summary + cash position for the cashup screen (from the open shift)."""
     ctx = _require_attendant()
     date = date or nowdate()
 
-    name = _day_shift(ctx, date) or (_open_shift(ctx) or {}).get("name")
-    summary = {"cash_sales": 0.0, "card_sales": 0.0, "mobile_money": 0.0, "total_sales": 0.0}
+    name = (_open_shift(ctx) or {}).get("name") or _day_shift(ctx, date)
+    summary = {
+        "cash_sales": 0.0, "card_sales": 0.0, "mobile_money": 0.0,
+        "total_sales": 0.0, "deposited_cash": 0.0, "variance": 0.0,
+    }
     if name:
         doc = frappe.get_doc(DT_SHIFT, name)
         by_type = {}
         for d in doc.deposits:
             by_type[d.deposit_type] = by_type.get(d.deposit_type, 0.0) + flt(d.amount)
-        summary["cash_sales"] = by_type.get("Cash", 0.0)
-        summary["card_sales"] = flt(doc.credit_sales) or by_type.get("Card", 0.0)
+        total_sales = flt(doc.total_sales)
+        credit = flt(doc.credit_sales)
+        non_cash = sum(v for k, v in by_type.items() if k != "Cash")
+        # Cash the attendant should physically hold = sales not on credit, minus
+        # anything already banked via card/mobile.
+        summary["cash_sales"] = total_sales - credit - non_cash
+        summary["card_sales"] = credit or by_type.get("Card", 0.0)
         summary["mobile_money"] = by_type.get("Mobile Money", 0.0)
-        summary["total_sales"] = flt(doc.total_sales) or (
-            summary["cash_sales"] + summary["card_sales"] + summary["mobile_money"]
-        )
+        summary["total_sales"] = total_sales
+        summary["deposited_cash"] = by_type.get("Cash", 0.0)
+        summary["variance"] = flt(doc.variance)
     return {
         "date": formatdate(date, "dd MMM yyyy"),
         "raw_date": str(date),
@@ -606,29 +616,51 @@ def get_cashup(date=None):
     }
 
 
+CASHUP_MARKER = "Cashup"
+
+
 @frappe.whitelist()
 def submit_cashup(date=None, cash_counted=0, remarks=None):
-    """Record counted cash against the day's shift and compute the variance."""
-    ctx = _require_attendant()
-    date = date or nowdate()
-    name = _day_shift(ctx, date) or (_open_shift(ctx) or {}).get("name")
-    if not name:
-        frappe.throw(_("No shift found for {0} to cash up.").format(date))
+    """Record the counted cash as a Cash deposit on the OPEN shift, then update the
+    shift totals + variance (variance = sales not on credit, less deposits).
 
-    doc = frappe.get_doc(DT_SHIFT, name)
-    expected_cash = 0.0
-    for d in doc.deposits:
-        if d.deposit_type == "Cash":
-            expected_cash += flt(d.amount)
-    difference = flt(cash_counted) - expected_cash
-    doc.variance = difference
+    Re-submitting replaces the previous cashup row rather than stacking new ones.
+    """
+    ctx = _require_attendant()
+    shift = _open_shift(ctx)
+    if not shift:
+        frappe.throw(_("You have no open shift to cash up. Do the cashup during your shift, before closing it."))
+
+    doc = frappe.get_doc(DT_SHIFT, shift.name)
+    if doc.docstatus != 0:
+        frappe.throw(_("This shift is already closed and can no longer be edited."))
+
+    # Drop any earlier cashup-added cash row so re-submitting doesn't stack up,
+    # then rebuild the deposits table.
+    kept = [d for d in doc.deposits
+            if not (d.deposit_type == "Cash" and (d.reference or "").startswith(CASHUP_MARKER))]
+    doc.set("deposits", [])
+    for d in kept:
+        doc.append("deposits", {"deposit_type": d.deposit_type, "amount": d.amount, "reference": d.reference})
+    if flt(cash_counted) > 0:
+        ref = f"{CASHUP_MARKER}: {remarks}" if remarks else CASHUP_MARKER
+        doc.append("deposits", {"deposit_type": "Cash", "amount": flt(cash_counted), "reference": ref})
+
+    total_deposits = sum(flt(d.amount) for d in doc.deposits)
+    non_cash = sum(flt(d.amount) for d in doc.deposits if d.deposit_type != "Cash")
+    doc.total_deposits = total_deposits
+    doc.variance = flt(doc.total_sales) - flt(doc.credit_sales) - total_deposits
     doc.save(ignore_permissions=True)
     frappe.db.commit()
+
+    expected_cash = flt(doc.total_sales) - flt(doc.credit_sales) - non_cash
     return {
-        "shift": name,
+        "shift": doc.name,
         "expected_cash": expected_cash,
         "cash_counted": flt(cash_counted),
-        "difference": difference,
+        "difference": flt(cash_counted) - expected_cash,
+        "total_deposits": total_deposits,
+        "variance": doc.variance,
     }
 
 
