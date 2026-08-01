@@ -307,20 +307,25 @@ def serve_order(otp):
     if doc.status != ORDER_RECEIVED:
         frappe.throw(_("This order cannot be served (status: {0}).").format(doc.status))
 
-    # Step 1: ensure the Sales Order exists via greatnorth's own logic (handles
-    # the delivery date). Skip if it was already created.
-    if not doc.get(SO_CREATED_FLAG):
+    # Step 1: ensure the Sales Order exists via greatnorth's own logic (the same
+    # call the desk "Create Sales Order" button makes — it sets the delivery date
+    # etc.). Skip if one was already created for this request.
+    if not doc.get(SO_CREATED_FLAG) and not doc.get("sales_order"):
         try:
             create_so = frappe.get_attr(GN_CREATE_SO)
         except Exception:
             frappe.throw(_("Serve action is not available on this server ({0}).").format(GN_CREATE_SO))
         create_so(so_request=doc.name)
-        doc.reload()
 
-    # Step 2: mark it Served (safe now that the Sales Order exists).
-    doc.status = ORDER_SERVED
-    doc.save(ignore_permissions=True)
+    # Step 2: mark it Served with a DIRECT DB write. We deliberately do NOT call
+    # doc.save(): greatnorth's SO Request hooks re-run Sales Order creation on
+    # save, which then fails as a duplicate against the same Customer PO (and is
+    # reported to the app as a misleading "please enter delivery date"). Setting
+    # the status via db.set_value bypasses those hooks — the Sales Order already
+    # exists from step 1, so nothing else needs to run.
+    frappe.db.set_value(DT_ORDER, doc.name, "status", ORDER_SERVED, update_modified=True)
     frappe.db.commit()
+    doc.reload()
 
     view = _order_view(doc)
     view["served_by"] = ctx.get("full_name") or ctx.get("employee_name")
