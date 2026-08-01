@@ -31,7 +31,7 @@ export default function AbsenceReportScreen({ navigation }) {
     setError(null);
     try {
       await api.createAbsenceReport({ from_date: toISO(date), to_date: toISO(date), reason });
-      navigation.navigate("LeaveList");
+      navigation.navigate("Attendance");
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -43,7 +43,7 @@ export default function AbsenceReportScreen({ navigation }) {
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
       <View style={styles.note}>
         <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
-        <Text style={styles.noteText}>{"  "}Report a day you were or will be absent. This is filed for your supervisor to review.</Text>
+        <Text style={styles.noteText}>{"  "}Report a day you were absent. This marks your attendance as Absent for that date.</Text>
       </View>
 
       <Text style={styles.label}>Date of Absence</Text>

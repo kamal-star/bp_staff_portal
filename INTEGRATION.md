@@ -52,7 +52,10 @@ from `last_reading` (nozzle A) and `last_reading_b` (nozzle B). Price from `pric
 
 ### HRMS
 `get_attendance` → `Attendance`; `get_leave_types` → `Leave Type`;
-`get_leave_requests` / `create_leave_request` / `create_absence_report` → `Leave Application`.
+`get_leave_requests` / `create_leave_request` → `Leave Application`.
+`create_absence_report` → creates a submitted **`Attendance`** record with status
+`Absent` per day (reason stored as a comment; Attendance has no reason field);
+days that already have attendance are skipped.
 
 ## Points to confirm / tune (assumptions)
 

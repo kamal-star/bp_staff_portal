@@ -44,6 +44,7 @@ from frappe.utils import (
     getdate,
     get_datetime,
     time_diff_in_seconds,
+    add_days,
     flt,
     cint,
     formatdate,
@@ -730,14 +731,51 @@ def create_leave_request(leave_type, from_date, to_date, reason=None):
     return _create_leave(ctx, leave_type, from_date, to_date, reason)
 
 
+ATTENDANCE_ABSENT = "Absent"
+
+
 @frappe.whitelist()
-def create_absence_report(from_date, to_date=None, reason=None, leave_type=None):
-    """Report an absence. Files a Leave Application (defaulting the type)."""
+def create_absence_report(from_date, to_date=None, reason=None):
+    """Report an absence: mark Attendance = Absent for each day in the range.
+
+    This is distinct from a Leave Request (which files a Leave Application).
+    Attendance has no reason field, so the reason is kept as a comment on the
+    record. Days that already have an attendance entry are skipped.
+    """
     ctx = _require_attendant()
-    if not leave_type:
-        types = frappe.get_all(DT_LEAVE_TYPE, pluck="name",
-                               limit=1, ignore_permissions=True)
-        leave_type = types[0] if types else None
-    if not leave_type:
-        frappe.throw(_("No leave type is configured. Please contact HR."))
-    return _create_leave(ctx, leave_type, from_date, to_date or from_date, reason)
+    if not ctx.get("employee"):
+        frappe.throw(_("Your account is not linked to an employee record."))
+    company = frappe.db.get_value("Employee", ctx["employee"], "company")
+
+    start = getdate(from_date)
+    end = getdate(to_date) if to_date else start
+    if end < start:
+        end = start
+
+    created, skipped = [], []
+    d = start
+    while d <= end:
+        exists = frappe.db.exists("Attendance", {
+            "employee": ctx["employee"], "attendance_date": d, "docstatus": ["<", 2],
+        })
+        if exists:
+            skipped.append(str(d))
+        else:
+            att = frappe.new_doc(DT_ATTENDANCE)
+            att.employee = ctx["employee"]
+            att.attendance_date = d
+            att.status = ATTENDANCE_ABSENT
+            if company:
+                att.company = company
+            att.insert(ignore_permissions=True)
+            if reason:
+                att.add_comment("Comment", _("Absence reported via staff app: {0}").format(reason))
+            att.submit()
+            created.append(att.name)
+        d = add_days(d, 1)
+
+    if not created and skipped:
+        frappe.throw(_("Attendance already exists for the selected date(s): {0}").format(", ".join(skipped)))
+
+    frappe.db.commit()
+    return {"status": ATTENDANCE_ABSENT, "created": created, "skipped": skipped}
