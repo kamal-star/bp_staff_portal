@@ -62,6 +62,16 @@ DT_LEAVE_TYPE = "Leave Type"
 
 ORDER_SERVED = "Served"
 ORDER_RECEIVED = "Received"
+
+# greatnorth's own "serve" logic. Serving an order in this ERP is two steps:
+#   1. create the Sales Order from the request (this method sets the delivery
+#      date etc. internally and flips `so_created`) — the same call the desk's
+#      "Create Sales Order" button makes;
+#   2. mark the SO Request as Served.
+# Setting status=Served directly (without step 1) makes greatnorth try to build
+# the Sales Order with no delivery date, which throws "Please enter Delivery Date".
+GN_CREATE_SO = "greatnorth.api.sales_order.create_sales_order_from_request"
+SO_CREATED_FLAG = "so_created"
 SHIFT_OPEN = "Open"
 SHIFT_CLOSED = "Closed"
 
@@ -297,6 +307,17 @@ def serve_order(otp):
     if doc.status != ORDER_RECEIVED:
         frappe.throw(_("This order cannot be served (status: {0}).").format(doc.status))
 
+    # Step 1: ensure the Sales Order exists via greatnorth's own logic (handles
+    # the delivery date). Skip if it was already created.
+    if not doc.get(SO_CREATED_FLAG):
+        try:
+            create_so = frappe.get_attr(GN_CREATE_SO)
+        except Exception:
+            frappe.throw(_("Serve action is not available on this server ({0}).").format(GN_CREATE_SO))
+        create_so(so_request=doc.name)
+        doc.reload()
+
+    # Step 2: mark it Served (safe now that the Sales Order exists).
     doc.status = ORDER_SERVED
     doc.save(ignore_permissions=True)
     frappe.db.commit()
