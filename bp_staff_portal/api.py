@@ -455,10 +455,12 @@ def end_shift(readings, deposits=None, credit_sales=0):
         amount = flt(d.get("amount"))
         if not amount:
             continue
+        dtype = d.get("deposit_type") or "Cash"
         doc.append("deposits", {
-            "deposit_type": d.get("deposit_type") or "Cash",
+            "deposit_type": dtype,
             "amount": amount,
-            "reference": d.get("reference") or "",
+            # Deposit.reference is mandatory in the ERP — never leave it blank.
+            "reference": d.get("reference") or f"{dtype} - end of shift",
         })
         total_deposits += amount
 
@@ -641,7 +643,11 @@ def submit_cashup(date=None, cash_counted=0, remarks=None):
             if not (d.deposit_type == "Cash" and (d.reference or "").startswith(CASHUP_MARKER))]
     doc.set("deposits", [])
     for d in kept:
-        doc.append("deposits", {"deposit_type": d.deposit_type, "amount": d.amount, "reference": d.reference})
+        doc.append("deposits", {
+            "deposit_type": d.deposit_type,
+            "amount": d.amount,
+            "reference": d.reference or (d.deposit_type or "Deposit"),  # reference is mandatory
+        })
     if flt(cash_counted) > 0:
         ref = f"{CASHUP_MARKER}: {remarks}" if remarks else CASHUP_MARKER
         doc.append("deposits", {"deposit_type": "Cash", "amount": flt(cash_counted), "reference": ref})
