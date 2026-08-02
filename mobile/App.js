@@ -15,7 +15,6 @@ import ValidateOrderScreen from "./src/screens/ValidateOrderScreen";
 import OrderServedScreen from "./src/screens/OrderServedScreen";
 import StartShiftScreen from "./src/screens/StartShiftScreen";
 import EndShiftScreen from "./src/screens/EndShiftScreen";
-import PhysicalStockScreen from "./src/screens/PhysicalStockScreen";
 import CashupScreen from "./src/screens/CashupScreen";
 import MoreScreen from "./src/screens/MoreScreen";
 import HRScreen from "./src/screens/HRScreen";
@@ -69,7 +68,6 @@ function MoreStack() {
 const TAB_ICONS = {
   Home: "home",
   ValidateTab: "qr-code",
-  Stock: "cube",
   Cashup: "cash",
   More: "ellipsis-horizontal",
 };
@@ -106,7 +104,6 @@ function MainTabs() {
         component={ValidateStack}
         options={{ title: "Validate", headerShown: false }}
       />
-      <Tab.Screen name="Stock" component={PhysicalStockScreen} options={{ title: "Stock" }} />
       <Tab.Screen name="Cashup" component={CashupScreen} options={{ title: "Cashup" }} />
       <Tab.Screen
         name="More"

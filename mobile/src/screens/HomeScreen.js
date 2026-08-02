@@ -45,7 +45,6 @@ export default function HomeScreen({ navigation }) {
   const shift = data?.shift;
   const quickActions = [
     { icon: "qr-code-outline", label: "Validate Order", onPress: () => navigation.navigate("ValidateTab") },
-    { icon: "cube-outline", label: "Physical Stock", onPress: () => navigation.navigate("Stock") },
     { icon: "cash-outline", label: "Daily Cashup", onPress: () => navigation.navigate("Cashup") },
     shift
       ? { icon: "log-out-outline", label: "End Shift", onPress: () => navigation.navigate("More", { screen: "EndShift" }) }
