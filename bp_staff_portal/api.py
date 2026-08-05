@@ -223,15 +223,17 @@ def get_home():
             "duration": duration,
         }
 
-    # Orders served today (optionally scoped to this station's warehouse name).
-    order_filter = {"status": ORDER_SERVED, "date": today}
+    # Orders THIS attendant served today (attributed via served_by, stamped in
+    # serve_order). Older orders served before this field existed won't count.
+    order_filter = {"status": ORDER_SERVED, "date": today, "served_by": ctx.get("user")}
     served = frappe.get_all(
         DT_ORDER, filters=order_filter, fields=["qty"], ignore_permissions=True
     )
     orders_served = len(served)
     litres_sold = sum(flt(r.qty) for r in served)
 
-    # Cash / card figures come from the current shift's running totals + deposits.
+    # Cash / card come from THIS attendant's own shift (see _open_shift, which is
+    # scoped to their Sales Person). Populated as deposits/credit are recorded.
     cash_sales = card_sales = 0.0
     if shift:
         card_sales = flt(shift.credit_sales)
@@ -318,13 +320,18 @@ def serve_order(otp):
             frappe.throw(_("Serve action is not available on this server ({0}).").format(GN_CREATE_SO))
         create_so(so_request=doc.name)
 
-    # Step 2: mark it Served with a DIRECT DB write. We deliberately do NOT call
+    # Step 2: mark it Served with a DIRECT DB write, and stamp who served it +
+    # when (used for the per-attendant Home stats). We deliberately do NOT call
     # doc.save(): greatnorth's SO Request hooks re-run Sales Order creation on
     # save, which then fails as a duplicate against the same Customer PO (and is
     # reported to the app as a misleading "please enter delivery date"). Setting
-    # the status via db.set_value bypasses those hooks — the Sales Order already
+    # the values via db.set_value bypasses those hooks — the Sales Order already
     # exists from step 1, so nothing else needs to run.
-    frappe.db.set_value(DT_ORDER, doc.name, "status", ORDER_SERVED, update_modified=True)
+    frappe.db.set_value(DT_ORDER, doc.name, {
+        "status": ORDER_SERVED,
+        "served_by": ctx.get("user"),
+        "served_time": now_datetime(),
+    }, update_modified=True)
     frappe.db.commit()
     doc.reload()
 

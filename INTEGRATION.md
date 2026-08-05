@@ -62,15 +62,17 @@ days that already have attendance are skipped.
 These work as written but are the only spots not 1:1 with a dedicated ERP field —
 review them against how the back office expects the data:
 
-1. **Served by / served time** — `SO Request` has **no** `served_by`/`served_time`
-   field. `serve_order` returns the current attendant + `now()` for the receipt
-   screen but does not persist them. Add custom fields on `SO Request` if you want
-   them stored, then set them in `serve_order`.
+1. **Served by / served time** — the app adds custom fields `served_by` (Link
+   User) and `served_time` (Datetime) to `SO Request` via `setup.ensure_custom_fields`
+   (run on install/migrate). `serve_order` stamps them so served orders are
+   attributed to the attendant.
 
-2. **Home stats** (`orders_served`, `litres_sold`) count all `SO Request`s with
-   `status = Served` and `date = today` (not scoped to the attendant, since orders
-   aren't stamped with who served them). `cash_sales`/`card_sales` come from the
-   open shift's `total_deposits`/`credit_sales`, which are only populated at close.
+2. **Home stats** — `orders_served` / `litres_sold` count `SO Request`s with
+   `status = Served`, `date = today` and `served_by = the signed-in attendant`
+   (so the dashboard is per-attendant). `cash_sales`/`card_sales` come from that
+   attendant's open shift (`total_deposits`/`credit_sales`), populated as
+   deposits/credit are recorded. Per-attendant cash/card requires the attendant
+   to have a Sales Person link (else `_open_shift` falls back to station).
 
 3. **Physical stock** — there is no custom stock-take doctype. `get_physical_stock`
    reads live balances from `Bin` for warehouses whose name contains the branch
