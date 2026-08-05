@@ -445,45 +445,64 @@ def end_shift(readings, deposits=None, credit_sales=0):
     closing = {(r.get("pump"), r.get("nozzle") or "A"): cint(r.get("closing_meter"))
                for r in read_rows}
 
-    doc = frappe.get_doc(DT_SHIFT, shift.name)
-    total_sales = 0.0
-    for r in doc.pump_reading:
-        key = (r.pump, r.nozzle or "A")
-        if key in closing:
-            r.closing_meter = closing[key]
-        r.sales = max(cint(r.closing_meter) - cint(r.opening_meter), 0)
-        r.volume = r.sales
-        r.amount = flt(r.volume) * flt(r.price)
-        total_sales += flt(r.amount)
+    def _close_shift():
+        """Load the shift fresh, apply closing values, and write in ONE step.
 
-    # Reset and re-add deposit rows.
-    doc.set("deposits", [])
-    total_deposits = 0.0
-    for d in dep_rows:
-        amount = flt(d.get("amount"))
-        if not amount:
-            continue
-        dtype = d.get("deposit_type") or "Cash"
-        doc.append("deposits", {
-            "deposit_type": dtype,
-            "amount": amount,
-            # Deposit.reference is mandatory in the ERP — never leave it blank.
-            "reference": d.get("reference") or f"{dtype} - end of shift",
-        })
-        total_deposits += amount
+        greatnorth's Shifts logic bumps the record's timestamp on save, so a
+        save() followed by a separate submit() trips "Document has been modified
+        after you opened it". We do a single write (submit for submittable
+        doctypes, else save), and the caller retries once on a timestamp clash.
+        """
+        doc = frappe.get_doc(DT_SHIFT, shift.name)
+        total_sales = 0.0
+        for r in doc.pump_reading:
+            key = (r.pump, r.nozzle or "A")
+            if key in closing:
+                r.closing_meter = closing[key]
+            r.sales = max(cint(r.closing_meter) - cint(r.opening_meter), 0)
+            r.volume = r.sales
+            r.amount = flt(r.volume) * flt(r.price)
+            total_sales += flt(r.amount)
 
-    doc.credit_sales = flt(credit_sales)
-    doc.total_sales = total_sales
-    doc.total_deposits = total_deposits
-    # variance = sales that aren't on credit, less what's been deposited (the
-    # ERP's convention: unaccounted cash trends to 0 as deposits come in).
-    doc.variance = total_sales - flt(credit_sales) - total_deposits
-    doc.end = now_datetime()
-    doc.status = SHIFT_CLOSED
-    doc.completed = 1
-    doc.save(ignore_permissions=True)
-    if doc.docstatus == 0 and frappe.get_meta(DT_SHIFT).is_submittable:
-        doc.submit()
+        doc.set("deposits", [])
+        total_deposits = 0.0
+        for d in dep_rows:
+            amount = flt(d.get("amount"))
+            if not amount:
+                continue
+            dtype = d.get("deposit_type") or "Cash"
+            doc.append("deposits", {
+                "deposit_type": dtype,
+                "amount": amount,
+                # Deposit.reference is mandatory in the ERP — never leave it blank.
+                "reference": d.get("reference") or f"{dtype} - end of shift",
+            })
+            total_deposits += amount
+
+        doc.credit_sales = flt(credit_sales)
+        doc.total_sales = total_sales
+        doc.total_deposits = total_deposits
+        # variance = sales that aren't on credit, less what's been deposited (the
+        # ERP's convention: unaccounted cash trends to 0 as deposits come in).
+        doc.variance = total_sales - flt(credit_sales) - total_deposits
+        doc.end = now_datetime()
+        doc.status = SHIFT_CLOSED
+        doc.completed = 1
+        doc.flags.ignore_permissions = True
+        if frappe.get_meta(DT_SHIFT).is_submittable:
+            doc.submit()
+        else:
+            doc.save()
+        return doc, total_sales, total_deposits
+
+    for attempt in range(2):
+        try:
+            doc, total_sales, total_deposits = _close_shift()
+            break
+        except frappe.exceptions.TimestampMismatchError:
+            frappe.db.rollback()
+            if attempt == 1:
+                raise
     frappe.db.commit()
 
     return {
