@@ -15,13 +15,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { api, extractError } from "../api/client";
 import { colors, money } from "../theme";
 
-const keyOf = (o) => `${o.pump}||${o.nozzle}`;
-const labelOf = (o) => `${o.pump}  ·  ${o.nozzle}`;
-
 export default function StartShiftScreen({ navigation }) {
   const [station, setStation] = useState(null);
-  const [options, setOptions] = useState([]); // branch pumps (pump+nozzle)
-  const [rows, setRows] = useState([]); // selected: {key,pump,nozzle,product,price,last_reading,opening_meter}
+  const [options, setOptions] = useState([]); // branch pumps (one per pump)
+  const [rows, setRows] = useState([]); // {key,pump,product,price,last_reading_a,last_reading_b,opening_a,opening_b}
   const [existingShift, setExistingShift] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,35 +48,37 @@ export default function StartShiftScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const usedKeys = new Set(rows.filter((r) => r.pump).map(keyOf));
+  const usedPumps = new Set(rows.filter((r) => r.pump).map((r) => r.pump));
   const availableFor = (idx) =>
-    options.filter((o) => !usedKeys.has(keyOf(o)) || (rows[idx] && keyOf(o) === keyOf(rows[idx])));
+    options.filter((o) => !usedPumps.has(o.pump) || (rows[idx] && o.pump === rows[idx].pump));
 
   function addRow() {
     setRows((p) => [
       ...p,
-      { key: Math.random().toString(36).slice(2), pump: null, nozzle: null, product: null, price: null, last_reading: null, opening_meter: "" },
+      { key: Math.random().toString(36).slice(2), pump: null, product: null, price: null, last_reading_a: null, last_reading_b: null, opening_a: "", opening_b: "" },
     ]);
   }
   function removeRow(i) { setRows((p) => p.filter((_, idx) => idx !== i)); }
   function choose(i, o) {
-    setRows((p) => p.map((r, idx) => (idx === i ? { ...r, pump: o.pump, nozzle: o.nozzle, product: o.product, price: o.price, last_reading: o.last_reading } : r)));
+    setRows((p) => p.map((r, idx) => (idx === i
+      ? { ...r, pump: o.pump, product: o.product, price: o.price, last_reading_a: o.last_reading_a, last_reading_b: o.last_reading_b }
+      : r)));
     setPickerFor(null);
   }
-  function setMeter(i, v) {
-    setRows((p) => p.map((r, idx) => (idx === i ? { ...r, opening_meter: v.replace(/[^0-9]/g, "") } : r)));
-  }
+  function setA(i, v) { setRows((p) => p.map((r, idx) => (idx === i ? { ...r, opening_a: v.replace(/[^0-9]/g, "") } : r))); }
+  function setB(i, v) { setRows((p) => p.map((r, idx) => (idx === i ? { ...r, opening_b: v.replace(/[^0-9]/g, "") } : r))); }
 
   async function onStart() {
-    const valid = rows.filter((r) => r.pump && r.opening_meter !== "");
-    if (valid.length === 0) {
-      setError("Add at least one pump and enter its opening reading.");
+    const readings = [];
+    for (const r of rows) {
+      if (!r.pump) continue;
+      if (r.opening_a !== "") readings.push({ pump: r.pump, nozzle: "A", product: r.product, price: r.price, opening_meter: Number(r.opening_a) });
+      if (r.opening_b !== "") readings.push({ pump: r.pump, nozzle: "B", product: r.product, price: r.price, opening_meter: Number(r.opening_b) });
+    }
+    if (readings.length === 0) {
+      setError("Add at least one pump and enter an opening reading.");
       return;
     }
-    const readings = valid.map((r) => ({
-      pump: r.pump, nozzle: r.nozzle, product: r.product, price: r.price,
-      opening_meter: Number(r.opening_meter),
-    }));
     setSaving(true);
     setError(null);
     try {
@@ -108,7 +107,7 @@ export default function StartShiftScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
-      <Text style={styles.intro}>Add each pump you're operating and enter its opening meter reading.</Text>
+      <Text style={styles.intro}>Add each pump you're operating and enter its opening meter reading(s).</Text>
       <View style={styles.stationRow}>
         <Text style={styles.stationLabel}>Station</Text>
         <Text style={styles.stationValue}>{station || "—"}</Text>
@@ -131,27 +130,36 @@ export default function StartShiftScreen({ navigation }) {
             <Text style={styles.label}>Select Pump</Text>
             <TouchableOpacity style={styles.dropdown} onPress={() => setPickerFor(i)}>
               <Text style={[styles.dropdownText, !r.pump && { color: colors.muted }]}>
-                {r.pump ? labelOf(r) : "Choose a pump…"}
+                {r.pump || "Choose a pump…"}
               </Text>
               <Ionicons name="chevron-down" size={18} color={colors.muted} />
             </TouchableOpacity>
 
             {r.pump ? (
-              <Text style={styles.meta}>
-                {r.product || "—"}  ·  TZS {r.price ?? 0}
-                {r.last_reading ? `   ·   Last: ${money(r.last_reading)}` : ""}
-              </Text>
-            ) : null}
+              <>
+                <Text style={styles.meta}>{r.product || "—"}  ·  TZS {r.price ?? 0}</Text>
 
-            <Text style={styles.label}>Opening Meter Reading</Text>
-            <TextInput
-              style={styles.meterInput}
-              value={r.opening_meter}
-              onChangeText={(v) => setMeter(i, v)}
-              keyboardType="number-pad"
-              placeholder="Enter opening reading"
-              placeholderTextColor={colors.muted}
-            />
+                <Text style={styles.label}>Opening — Nozzle A</Text>
+                <TextInput
+                  style={styles.meterInput}
+                  value={r.opening_a}
+                  onChangeText={(v) => setA(i, v)}
+                  keyboardType="number-pad"
+                  placeholder={r.last_reading_a ? `Last: ${money(r.last_reading_a)}` : "Enter opening reading"}
+                  placeholderTextColor={colors.muted}
+                />
+
+                <Text style={styles.label}>Opening — Nozzle B <Text style={styles.optional}>(if used)</Text></Text>
+                <TextInput
+                  style={styles.meterInput}
+                  value={r.opening_b}
+                  onChangeText={(v) => setB(i, v)}
+                  keyboardType="number-pad"
+                  placeholder={r.last_reading_b ? `Last: ${money(r.last_reading_b)}` : "Leave blank if not used"}
+                  placeholderTextColor={colors.muted}
+                />
+              </>
+            ) : null}
           </View>
         ))
       )}
@@ -182,13 +190,9 @@ export default function StartShiftScreen({ navigation }) {
             <Text style={styles.sheetTitle}>Select a pump</Text>
             <ScrollView style={{ maxHeight: 360 }}>
               {(pickerFor !== null ? availableFor(pickerFor) : []).map((o) => (
-                <TouchableOpacity key={keyOf(o)} style={styles.sheetItem} onPress={() => choose(pickerFor, o)}>
-                  <View>
-                    <Text style={styles.sheetItemLabel}>{labelOf(o)}</Text>
-                    <Text style={styles.sheetItemMeta}>
-                      {o.product || "—"}  ·  TZS {o.price ?? 0}{o.last_reading ? `  ·  Last: ${money(o.last_reading)}` : ""}
-                    </Text>
-                  </View>
+                <TouchableOpacity key={o.pump} style={styles.sheetItem} onPress={() => choose(pickerFor, o)}>
+                  <Text style={styles.sheetItemLabel}>{o.pump}</Text>
+                  <Text style={styles.sheetItemMeta}>{o.product || "—"}  ·  TZS {o.price ?? 0}</Text>
                 </TouchableOpacity>
               ))}
               {pickerFor !== null && availableFor(pickerFor).length === 0 ? (
@@ -218,6 +222,7 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
   cardIndex: { fontSize: 13, fontWeight: "800", color: colors.primaryLight },
   label: { fontSize: 12, color: colors.muted, fontWeight: "600", marginTop: 10, marginBottom: 6 },
+  optional: { color: colors.muted, fontWeight: "400", fontStyle: "italic" },
   dropdown: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, backgroundColor: "#fff" },
   dropdownText: { fontSize: 15, color: colors.text, fontWeight: "600" },
   meta: { fontSize: 12, color: colors.muted, marginTop: 6 },
@@ -231,7 +236,6 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.muted, fontSize: 15, marginTop: 12, textAlign: "center" },
   linkBtn: { marginTop: 16, backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20 },
   linkBtnText: { color: "#fff", fontWeight: "700" },
-  // picker
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   sheet: { backgroundColor: colors.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, paddingBottom: 28 },
   sheetTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginBottom: 12 },
