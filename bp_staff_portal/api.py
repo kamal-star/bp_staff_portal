@@ -359,14 +359,15 @@ def get_pumps():
         fields=["name", "product", "price", "last_reading", "last_reading_b"],
         order_by="name asc", ignore_permissions=True,
     )
+    # Selectable pump+nozzle options for the Start Shift dropdown — only pumps
+    # linked to this attendant's branch. `last_reading` is the previous meter
+    # (shown as a hint only); the attendant types the opening value manually.
     rows = []
     for p in pumps:
         rows.append({"pump": p.name, "nozzle": "A", "product": p.product,
-                     "price": cint(p.price), "opening_meter": cint(p.last_reading)})
-        # Second nozzle only if it has ever carried a reading.
-        if cint(p.last_reading_b):
-            rows.append({"pump": p.name, "nozzle": "B", "product": p.product,
-                         "price": cint(p.price), "opening_meter": cint(p.last_reading_b)})
+                     "price": cint(p.price), "last_reading": cint(p.last_reading)})
+        rows.append({"pump": p.name, "nozzle": "B", "product": p.product,
+                     "price": cint(p.price), "last_reading": cint(p.last_reading_b)})
     return {"station": branch, "pumps": rows, "deposit_types": DEPOSIT_TYPES}
 
 
